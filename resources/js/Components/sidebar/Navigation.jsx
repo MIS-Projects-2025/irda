@@ -9,16 +9,17 @@ const ADMIN_LABELS = {
 };
 
 export default function NavLinks({ isSidebarOpen }) {
-    const { emp_data, ir_admin_role } = usePage().props;
+    const { emp_data, ir_admin_role, has_staff } = usePage().props;
 
     const irLinks = [
         { href: route("ir.index"),  label: "My IR" },
-        { href: route("ir.staff"),  label: "Staff IR" },
+        ...(has_staff ? [{ href: route("ir.staff"), label: "Staff IR" }] : []),
         { href: route("ir.create"), label: "Create IR" },
     ];
 
     if (ir_admin_role) {
-        irLinks.splice(2, 0, {
+        // Insert before "Create IR" (always the last item)
+        irLinks.splice(irLinks.length - 1, 0, {
             href:  route("ir.admin"),
             label: ADMIN_LABELS[ir_admin_role] ?? "Admin Items",
         });

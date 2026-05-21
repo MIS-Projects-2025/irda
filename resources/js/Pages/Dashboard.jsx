@@ -112,6 +112,12 @@ function barOpts(title, horizontal = false) {
     };
 }
 
+const SCOPE_LABEL = {
+    all:   "Showing all incident reports",
+    staff: "Showing your team's incident reports",
+    own:   "Showing your own incident reports",
+};
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Dashboard({ stats }) {
     const s = stats ?? {};
@@ -188,7 +194,7 @@ export default function Dashboard({ stats }) {
                 </div>
                 <div>
                     <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
-                    <p className="text-sm text-muted-foreground">Incident Report system overview</p>
+                    <p className="text-sm text-muted-foreground">{SCOPE_LABEL[s.scope] ?? "Incident Report system overview"}</p>
                 </div>
             </div>
 

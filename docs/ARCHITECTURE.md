@@ -1,8 +1,8 @@
 # IRDA System — Architecture Documentation
 
-**Version:** 1.0  
-**Date:** April 21, 2026  
-**Project:** Incident Report & Disciplinary Action (IRDA) System
+> **System:** Incident Report & Disciplinary Action (IRDA)
+> **Stack:** Laravel 12 / React 18 / Inertia.js / MySQL
+> **Last Updated:** 2026-05-18
 
 ---
 
@@ -13,29 +13,28 @@
 3. [High-Level Architecture](#3-high-level-architecture)
 4. [Directory Structure](#4-directory-structure)
 5. [Database Architecture](#5-database-architecture)
-6. [Backend Architecture](#6-backend-architecture)
-7. [Frontend Architecture](#7-frontend-architecture)
-8. [Authentication & Authorization](#8-authentication--authorization)
-9. [IR Workflow Engine](#9-ir-workflow-engine)
-10. [External Integrations](#10-external-integrations)
-11. [Key Constants & Enums](#11-key-constants--enums)
-12. [Configuration & Environment](#12-configuration--environment)
+6. [Authentication & Session Flow](#6-authentication--session-flow)
+7. [Backend Architecture](#7-backend-architecture)
+8. [Frontend Architecture](#8-frontend-architecture)
+9. [External Integrations](#9-external-integrations)
+10. [Route Map](#10-route-map)
+11. [Environment Configuration](#11-environment-configuration)
 
 ---
 
 ## 1. System Overview
 
-IRDA is an enterprise-grade **Incident Report and Disciplinary Action management system**. It digitizes and enforces a multi-role approval workflow for employee violations — from initial IR creation, through HR validation, supervisor assessment, department head approval, and DA issuance, to final employee acknowledgment.
+The **IRDA System** digitalizes the complete lifecycle of employee incidents — from initial report through disciplinary action acknowledgment. It enforces a structured multi-role approval chain, maintains an audit trail of every workflow step, and integrates with the company's HR information system (HRIS) for real-time employee, department, and supervisory hierarchy data.
 
 **Core Capabilities:**
-- Multi-role IR workflow (Supervisor → HR → Department Head → HR Manager → DA)
-- Disciplinary Action (DA) generation and acknowledgment chain
-- Letter of Explanation (LOE) submission and tracking
-- Violation code master data management
-- Dashboard analytics (trends, code distribution, DA type breakdown)
-- HR admin personnel assignment
-- System maintenance mode toggle
-- SSO-based authentication via Authify
+- Multi-step Incident Report (IR) creation and approval
+- Disciplinary Action (DA) issuance with a multi-signature chain
+- Letter of Explanation (LOE) submission by the employee
+- Violation code management and offense-progression tracking
+- Dashboard analytics (status trends, top violations, DA distribution)
+- Role-based access control derived from HRIS supervisory hierarchy
+- SSO integration via Authify
+- System-wide maintenance mode
 
 ---
 
@@ -43,70 +42,89 @@ IRDA is an enterprise-grade **Incident Report and Disciplinary Action management
 
 | Layer | Technology | Version |
 |---|---|---|
-| Backend Framework | Laravel | 12.0 |
-| PHP | PHP | 8.2+ |
-| Frontend Framework | React | 18.2 |
+| Backend Framework | Laravel | 12.x |
+| Language | PHP | 8.2+ |
+| ORM | Eloquent (Laravel) | — |
+| Frontend SPA | React | 18.2 |
 | SPA Bridge | Inertia.js | 2.0 |
 | Build Tool | Vite | 6.2 |
-| CSS Framework | Tailwind CSS | 3.2 |
-| UI Components | DaisyUI | 5.0 |
-| UI Primitives | Radix UI | Latest |
-| Component Library | Ant Design | 6.0 |
+| CSS | Tailwind CSS + DaisyUI | 3.2 / 5.0 |
+| UI Primitives | Radix UI, Ant Design | — / 6.0 |
+| Charts | Chart.js | 4.5 |
 | State Management | Zustand | 5.0 |
-| Form Management | React Hook Form | 7.7 |
-| Charts | Chart.js | Latest |
-| Notifications | Sonner | Latest |
-| Date Utilities | date-fns | Latest |
-| Icons | Lucide React + Ant Design Icons | Latest |
+| Form Handling | React Hook Form | 7.7 |
+| Notifications | Sonner, react-hot-toast | — |
+| HTTP Client (FE) | Axios | — |
+| Database | MySQL | — |
 | Testing | Pest | 3.8 |
-| Code Formatting | Laravel Pint | Latest |
-| Database | MySQL | Latest |
-| Session/Cache | File / Database | — |
-| Queue | Database | — |
 
 ---
 
 ## 3. High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                          Browser                            │
-│              React 18 + Inertia.js (SPA)                    │
-└────────────────────────┬────────────────────────────────────┘
-                         │ HTTP / Inertia Protocol
-┌────────────────────────▼────────────────────────────────────┐
-│                    Laravel 12 (PHP 8.2)                     │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Middleware│  │Controllers │  │ Services │  │Repositories│ │
-│  │ Auth     │  │ IrController│  │ IrRequest│  │ IrRequest │ │
-│  │ Admin    │  │ Dashboard  │  │ HrisApi  │  │ IrMaint.  │ │
-│  │ Inertia  │  │ IrMaint.  │  │ DataTable│  │ SysStatus │ │
-│  └──────────┘  └────────────┘  └──────────┘  └──────────┘  │
-└──────────┬───────────────────────────┬──────────────────────┘
-           │                           │
-┌──────────▼──────────┐   ┌────────────▼───────────────────────┐
-│   Application DB     │   │         External Services          │
-│   MySQL              │   │  ┌──────────────┐  ┌───────────┐  │
-│   - ir_requests      │   │  │ Authify (SSO)│  │ HRIS API  │  │
-│   - ir_approvals     │   │  │ Port 8001    │  │ Employee  │  │
-│   - ir_da_requests   │   │  │ Sessions DB  │  │ Data API  │  │
-│   - ir_list          │   │  └──────────────┘  └───────────┘  │
-│   - ir_appeals       │   └────────────────────────────────────┘
-│   - ir_reasons       │
-│   - ir_code_no       │   ┌────────────────────────────────────┐
-│   - ir_admins        │   │      Masterlist DB (Read-Only)     │
-│   - system_status    │   │   employee_masterlist (HR data)    │
-└─────────────────────┘   └────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Browser (React SPA)                       │
+│   Inertia.js renders pages, handles navigation without full      │
+│   page reloads. Axios used for AJAX-only endpoints.              │
+└────────────────────┬────────────────────────────────────────────┘
+                     │  HTTP / Inertia Protocol
+┌────────────────────▼────────────────────────────────────────────┐
+│                     Laravel 12 Application                        │
+│                                                                   │
+│  ┌──────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
+│  │  Middleware  │  │   Controllers   │  │      Services       │  │
+│  │  AuthMW      │─▶│  IrController   │─▶│  IrRequestService   │  │
+│  │  AdminMW     │  │  DashboardCtrl  │  │  IrMaintenanceSvc   │  │
+│  │  Inertia     │  │  MaintenanceCtrl│  │  HrisApiService     │  │
+│  └──────────────┘  │  AuthCtrl       │  │  DataTableService   │  │
+│                    │  AdminCtrl      │  │  SystemStatusSvc    │  │
+│                    │  ProfileCtrl    │  └──────────┬──────────┘  │
+│                    └─────────────────┘             │             │
+│                                                    │             │
+│  ┌─────────────────────────────────────────────────▼──────────┐  │
+│  │                       Repositories                          │  │
+│  │     IrRequestRepository    IrMaintenanceRepository          │  │
+│  │     SystemStatusRepository                                   │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌──────────────────┐  ┌────────────────┐  ┌──────────────────┐  │
+│  │ Models (Eloquent) │  │   Constants    │  │      Config      │  │
+│  │ IrRequest         │  │ IrConstants    │  │  database.php    │  │
+│  │ IrList            │  │ (statuses,     │  │  services.php    │  │
+│  │ IrApproval        │  │  roles, types) │  │  auth.php        │  │
+│  │ IrDaRequest       │  └────────────────┘  └──────────────────┘  │
+│  │ IrCodeNo          │                                            │
+│  │ IrReason          │                                            │
+│  │ IrAdmin           │                                            │
+│  │ IrAppeal          │                                            │
+│  │ SystemStatus      │                                            │
+│  └──────────────────┘                                            │
+└──────────────────────────────────┬───────────────────────────────┘
+                                   │
+        ┌──────────────────────────┼──────────────────────┐
+        │                          │                       │
+┌───────▼────────┐      ┌──────────▼──────┐    ┌──────────▼──────┐
+│  MySQL: App DB  │      │ MySQL:masterlist │    │  MySQL:authify  │
+│  (Read/Write)   │      │  (Read-Only)    │    │  (Read-Only)    │
+│                 │      │  HRIS employee  │    │ authify_sessions │
+│  ir_requests    │      │  masterlist     │    └─────────────────┘
+│  ir_approvals   │      └─────────────────┘
+│  ir_list        │
+│  ir_da_requests │      ┌─────────────────┐
+│  ir_code_no     │      │  HRIS REST API  │
+│  ir_admins      │      │  (HrisApiSvc)   │
+│  ir_reasons     │      │  Employee data  │
+│  ir_appeals     │      │  Approver chain │
+│  system_status  │      │  Direct reports │
+└─────────────────┘      └─────────────────┘
+
+                         ┌─────────────────┐
+                         │  Authify SSO    │
+                         │  (Port 8001)    │
+                         │  Login / Logout │
+                         └─────────────────┘
 ```
-
-### Request Lifecycle
-
-1. Browser sends HTTP request (or Inertia XHR)
-2. `AuthMiddleware` validates SSO token → session check
-3. Route dispatches to Controller
-4. Controller calls Service → Repository → Eloquent Model
-5. Response returned as Inertia page (initial: full HTML, subsequent: JSON)
-6. React renders the component with props
 
 ---
 
@@ -116,593 +134,549 @@ IRDA is an enterprise-grade **Incident Report and Disciplinary Action management
 IRDA/
 ├── app/
 │   ├── Constants/
-│   │   └── IrConstants.php          # All IR/DA status codes and labels
+│   │   └── IrConstants.php             # All enums: statuses, roles, DA types
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── AuthenticationController.php     # SSO logout
-│   │   │   ├── DashboardController.php          # Dashboard stats
-│   │   │   ├── DemoController.php               # Dev/test page
-│   │   │   ├── IrController.php                 # Main IR workflow
-│   │   │   ├── IrMaintenanceController.php      # HR admin panel
+│   │   │   ├── AuthenticationController.php
+│   │   │   ├── DashboardController.php
+│   │   │   ├── IrController.php            # Main IR workflow HTTP handler
+│   │   │   ├── IrMaintenanceController.php # HR admin panel
+│   │   │   ├── DemoController.php
 │   │   │   └── General/
-│   │   │       ├── AdminController.php          # System admin mgmt
-│   │   │       └── ProfileController.php        # User profile
-│   │   ├── Middleware/
-│   │   │   ├── AuthMiddleware.php               # SSO token validation
-│   │   │   ├── AdminMiddleware.php              # Admin role check
-│   │   │   └── HandleInertiaRequests.php        # Inertia shared data
-│   │   └── Requests/
-│   │       ├── Auth/LoginRequest.php
-│   │       └── ProfileUpdateRequest.php
+│   │   │       ├── AdminController.php
+│   │   │       └── ProfileController.php
+│   │   └── Middleware/
+│   │       ├── AuthMiddleware.php          # SSO token validation
+│   │       ├── AdminMiddleware.php         # System admin guard
+│   │       └── HandleInertiaRequests.php   # Inertia shared props
 │   ├── Models/
-│   │   ├── User.php                  # Laravel default (minimal use)
-│   │   ├── IrRequest.php             # Main IR submission
-│   │   ├── IrDaRequest.php           # Disciplinary action record
-│   │   ├── IrApproval.php            # Per-role approval tracking
-│   │   ├── IrAppeal.php              # Employee appeal records
-│   │   ├── IrAdmin.php               # HR personnel assignments
-│   │   ├── IrCodeNo.php              # Violation code master
-│   │   ├── IrList.php                # Violations per IR
-│   │   ├── IrReason.php              # LOE reasons
-│   │   └── SystemStatus.php          # Maintenance mode
+│   │   ├── IrRequest.php
+│   │   ├── IrList.php
+│   │   ├── IrApproval.php
+│   │   ├── IrDaRequest.php
+│   │   ├── IrCodeNo.php
+│   │   ├── IrReason.php
+│   │   ├── IrAdmin.php
+│   │   ├── IrAppeal.php
+│   │   ├── SystemStatus.php
+│   │   └── User.php
 │   ├── Repositories/
-│   │   ├── IrRequestRepository.php   # IR CRUD + filtering
+│   │   ├── IrRequestRepository.php
 │   │   ├── IrMaintenanceRepository.php
 │   │   └── SystemStatusRepository.php
-│   ├── Services/
-│   │   ├── IrRequestService.php      # IR list, detail, role resolution
-│   │   ├── IrMaintenanceService.php  # Admin & code CRUD
-│   │   ├── HrisApiService.php        # Employee data API client
-│   │   ├── SystemStatusService.php   # Maintenance mode logic
-│   │   └── DataTableService.php      # Server-side table logic
-│   └── Providers/
-│       └── AppServiceProvider.php
-├── bootstrap/
-│   ├── app.php                       # App config & middleware registration
-│   └── providers.php
+│   └── Services/
+│       ├── IrRequestService.php            # Core workflow business logic
+│       ├── IrMaintenanceService.php
+│       ├── HrisApiService.php              # External HRIS HTTP client
+│       ├── DataTableService.php
+│       └── SystemStatusService.php
 ├── config/
-│   ├── database.php                  # Multiple DB connection definitions
-│   └── (standard Laravel configs)
+│   ├── app.php                    # APP_NAME, timezone (Asia/Manila)
+│   ├── auth.php
+│   ├── database.php               # Three MySQL connections defined here
+│   └── services.php               # HRIS API base URL + authentication key
 ├── database/
-│   ├── migrations/                   # Schema version history
-│   ├── factories/
-│   └── seeders/
+│   └── migrations/
 ├── resources/
 │   ├── js/
-│   │   ├── app.jsx                   # Inertia/React entry point
-│   │   ├── Components/               # Reusable UI components
-│   │   ├── Pages/                    # Inertia page components
-│   │   ├── Layouts/                  # App shell layouts
-│   │   ├── stores/                   # Zustand state stores
-│   │   └── utils/                    # Utility functions
-│   └── css/
-│       └── app.css                   # Tailwind entry
+│   │   ├── app.jsx                # Inertia + React bootstrap entry point
+│   │   ├── Pages/
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── IR/
+│   │   │   │   ├── IndexIR.jsx          # My IRs (employee view)
+│   │   │   │   ├── StaffIR.jsx          # Supervisor's team IRs
+│   │   │   │   ├── AdminIR.jsx          # HR global list + bulk actions
+│   │   │   │   ├── CreateIR.jsx
+│   │   │   │   ├── EditIR.jsx
+│   │   │   │   ├── ShowIR.jsx
+│   │   │   │   ├── ShowDA.jsx
+│   │   │   │   ├── components/          # IR-specific sub-components
+│   │   │   │   └── Maintenance/
+│   │   │   │       ├── AdminMaintenance.jsx
+│   │   │   │       └── CodeMaintenance.jsx
+│   │   │   ├── Admin/
+│   │   │   │   ├── Admin.jsx
+│   │   │   │   └── NewAdmin.jsx
+│   │   │   └── Profile.jsx
+│   │   └── Components/
+│   │       ├── DataTable.jsx      # Reusable server-side paginated table
+│   │       ├── Modal.jsx
+│   │       ├── NavBar.jsx
+│   │       ├── sidebar/
+│   │       └── ui/                # Radix-based styled primitives
+│   └── views/
+│       └── app.blade.php          # Inertia root HTML shell
 ├── routes/
-│   ├── web.php                       # Route group includes
-│   ├── auth.php                      # Login/logout routes
-│   ├── irda.php                      # All IR workflow routes
-│   └── general.php                   # Dashboard & admin routes
-├── storage/
-├── tests/
-├── public/
-├── .env / .env.example
-├── composer.json
-├── package.json
-├── vite.config.js
-└── tailwind.config.js
+│   ├── web.php                    # Requires all other route files
+│   ├── auth.php
+│   ├── irda.php                   # All IR workflow routes
+│   └── general.php
+├── .env
+├── System_Tables.sql              # Legacy DB reference
+└── vite.config.js
 ```
 
 ---
 
 ## 5. Database Architecture
 
-### 5.1 Database Connections
+### 5.1 Connection Map
 
-The application uses **three separate MySQL databases**:
+| Connection Key | Database | Purpose | Access |
+|---|---|---|---|
+| `mysql` | Application DB | IR data, approvals, codes | Read + Write |
+| `masterlist` | `tspi_hr_db` | HRIS employee master list | Read-only |
+| `authify` | authify DB | SSO session tokens | Read-only |
 
-| Connection | Purpose | Access |
-|---|---|---|
-| `mysql` | Application data (IRs, DAs, approvals) | Read/Write |
-| `masterlist` | HR employee master list | Read-Only |
-| `authify` | SSO sessions | Read-Only |
+### 5.2 Entity Relationship Diagram
 
-### 5.2 Application Database Tables
+```
+ir_requests (ir_no — Primary Key)
+├──< ir_list          (one IR → many violations)
+├──< ir_approvals     (one IR → many per-role approvals)
+├──< ir_reasons       (one IR → up to 5 LOE reason entries)
+├──  ir_da_requests   (one IR → one DA record)
+└──< ir_appeals       (one IR → many appeals)
 
-#### `ir_requests` — Main IR Form
+ir_list.code_no ───────────────────────────► ir_code_no.code_number
+ir_requests.emp_no, requestor_id ──────────► HRIS employee data (via API)
+ir_admins.emp_no ──────────────────────────► HRIS employee data (via API)
+```
+
+### 5.3 Table Schemas
+
+#### `ir_requests` — Main IR Header
+
 | Column | Type | Description |
 |---|---|---|
-| hash | string | Public-facing unique identifier |
-| ir_status | int | Workflow status (0–4) |
-| requestor_emp_no | int | Who filed the IR |
-| subject_emp_no | int | Employee being reported |
-| quality_violation | int | 1=Admin, 2=Quality |
-| incident_date | date | When incident occurred |
-| incident_description | text | Narrative |
-| da_sign_date | date | Date HR signed for DA |
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | Formatted `YY-NNNN` (e.g. `25-0001`) |
+| `emp_no` | INT | Employee subject of the IR |
+| `requestor_id` | INT | HR person who filed the IR |
+| `quality_violation` | TINYINT | 1=Administrative, 2=Quality |
+| `reference` | VARCHAR | Optional reference number |
+| `what` | TEXT | What happened (incident description) |
+| `when_date` | DATE | Date of incident |
+| `where_loc` | TEXT | Location of incident |
+| `how` | TEXT | How the incident occurred |
+| `suspension` | TEXT | Suspension details (nullable) |
+| `assessment` | TEXT | Supervisor's assessment |
+| `recommendation` | TEXT | Supervisor's recommendation |
+| `sign` | VARCHAR | IR signature field |
+| `da_sign` | VARCHAR | DA signature field |
+| `sign_date` | DATE | Date of signing |
+| `ir_status` | TINYINT | 0=Pending, 1=Validated, 2=Approved, 3=Invalid, 4=Cancelled |
+| `sv_no` | INT | Supervisor emp_no override (nullable) |
+| `disapprove_remarks` | TEXT | HR remarks on disapproval |
+| `read_status` | TINYINT | Employee read tracking |
+| `read_date` | DATE | Date employee read the IR |
+| `is_inactive` | BOOL | Soft-delete flag |
+| `date_created` | DATETIME | Creation timestamp |
+| `date_updated` | DATETIME | Last update timestamp |
 
 #### `ir_approvals` — Per-Role Approval Tracking
-| Column | Type | Description |
-|---|---|---|
-| ir_request_id | FK | Reference to ir_requests |
-| role | enum | SV, HR, DH, OD, HR_MNGR, DM, DA |
-| emp_no | int | Approver employee number |
-| status | int | 0=Pending, 1=Approved, 2=Disapproved |
-| remarks | text | Optional feedback |
-| approved_at | timestamp | When action was taken |
 
-#### `ir_da_requests` — Disciplinary Action Record
 | Column | Type | Description |
 |---|---|---|
-| ir_request_id | FK | Reference to ir_requests |
-| da_status | int | DA workflow status (0–5) |
-| da_type | int | 1=Verbal Warning … 5=Dismissal |
-| hr_manager_signed_at | timestamp | HR Manager signature timestamp |
-| sv_acknowledged_at | timestamp | Supervisor acknowledgment |
-| dm_acknowledged_at | timestamp | Division Manager acknowledgment |
-| emp_acknowledged_at | timestamp | Employee acknowledgment |
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | FK → `ir_requests.ir_no` |
+| `role` | ENUM | `sv`, `hr`, `dh`, `od`, `hr_mngr`, `dm`, `da` |
+| `approver_emp_no` | INT | Employee who acted on this step |
+| `status` | TINYINT | 0=Pending, 1=Approved, 2=Disapproved |
+| `sign_date` | DATETIME | IR-level action timestamp |
+| `da_sign_date` | DATETIME | DA-level action timestamp |
+| `remarks` | TEXT | Notes for the approval/disapproval |
 
 #### `ir_list` — Violations Per IR
+
 | Column | Type | Description |
 |---|---|---|
-| ir_request_id | FK | Reference to ir_requests |
-| ir_code_no_id | FK | Violation code |
-| da_type | int | Disposition type for this violation |
-| offense_count | int | Offense count (1st, 2nd, etc.) |
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | FK → `ir_requests.ir_no` |
+| `emp_no` | INT | Employee subject |
+| `code_no` | VARCHAR | FK → `ir_code_no.code_number` |
+| `violation` | TEXT | Violation description text |
+| `da_type` | TINYINT | 1=Verbal, 2=Written, 3=3-Day Susp, 4=7-Day Susp, 5=Dismissal |
+| `date_committed` | DATE | Date violation occurred |
+| `offense_no` | TINYINT | Offense count (1st, 2nd, 3rd…) |
+| `disposition` | VARCHAR | Final disposition text |
+| `DATE_of_suspension` | DATE | Suspension start date |
+| `days_no` | INT | Number of suspension days |
+| `valid` | BOOL | HR validity mark |
+| `cleansed` | BOOL | Record cleansed flag |
+| `appeal_da_type` | TINYINT | Revised DA type after appeal |
+| `appeal_days` | INT | Revised suspension days |
+| `appeal_date` | DATE | Appeal date |
+| `date_of_LOE` | DATETIME | LOE submission timestamp |
+
+#### `ir_da_requests` — Disciplinary Action Lifecycle
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | FK → `ir_requests.ir_no` |
+| `da_type` | TINYINT | 1-5 (same as `ir_list.da_type`) |
+| `da_requestor_emp_no` | INT | HR who issued the DA |
+| `da_requested_date` | DATE | DA issuance date |
+| `da_others` | TEXT | Additional DA notes |
+| `da_status` | TINYINT | 0=Pending, 1=HR Signed, 2=SV Acked, 3=DM Acked, 4=Emp Acked |
+| `valid_to_da_emp_no` | INT | Employee the DA is directed to |
+| `valid_to_da_date` | DATETIME | DA effective date |
+| `acknowledge_da` | BOOL | Employee acknowledgment flag |
+| `acknowledge_date` | DATE | Date employee acknowledged |
 
 #### `ir_code_no` — Violation Code Master
+
 | Column | Type | Description |
 |---|---|---|
-| code | string | e.g., "A-01" |
-| description | text | Human-readable violation name |
-| is_active | bool | Soft toggle |
+| `id` | INT PK | Auto-increment |
+| `code_number` | VARCHAR UNIQUE | Code identifier (e.g. `A-01`) |
+| `violation` | TEXT | Violation description |
+| `status` | BOOL | Active/Inactive |
+| `category` | VARCHAR | Violation category |
+| `root_cause` | VARCHAR | Root cause classification |
+| `first_offense` | TEXT | Penalty for 1st offense |
+| `second_offense` | TEXT | Penalty for 2nd offense |
+| `third_offense` | TEXT | Penalty for 3rd offense |
+| `fourth_offense` | TEXT | Penalty for 4th offense |
+| `fifth_offense` | TEXT | Penalty for 5th offense |
 
 #### `ir_admins` — HR Personnel Assignments
+
 | Column | Type | Description |
 |---|---|---|
-| emp_no | int | HR employee (unique) |
-| role | enum | 'hr' or 'hr_mngr' |
-| is_active | bool | Active flag |
+| `id` | INT PK | Auto-increment |
+| `emp_no` | INT UNIQUE | HR employee number |
+| `role` | ENUM | `hr` or `hr_mngr` |
+| `is_active` | BOOL | Active status |
+| `created_at` | TIMESTAMP | — |
+| `updated_at` | TIMESTAMP | — |
+
+#### `ir_reasons` — Letter of Explanation Entries
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | FK → `ir_requests.ir_no` |
+| `seq` | TINYINT | Sequence 1–5 |
+| `reason_text` | TEXT | Employee's explanation text |
 
 #### `ir_appeals` — Employee Appeals
-| Column | Type | Description |
-|---|---|---|
-| ir_request_id | FK | Reference to ir_requests |
-| content | text | Appeal content |
-| filed_at | timestamp | When appeal was submitted |
 
-#### `ir_reasons` — LOE Reasons
 | Column | Type | Description |
 |---|---|---|
-| ir_request_id | FK | Reference to ir_requests |
-| reason | text | Employee's explanation |
-| submitted_at | timestamp | Submission timestamp |
+| `id` | INT PK | Auto-increment |
+| `ir_no` | VARCHAR | FK → `ir_requests.ir_no` |
+| `content` | TEXT | Appeal content |
 
 #### `system_status` — Maintenance Mode
+
 | Column | Type | Description |
 |---|---|---|
-| status | string | 'maintenance' or 'online' |
-| updated_at | timestamp | Last change |
-
-### 5.3 Read-Only Databases
-
-**Masterlist DB (`employee_masterlist` table)**
-- EMPLOYID, EMPNAME, JOB_TITLE, DEPARTMENT, ACCSTATUS
-- Used for employee lookups, supervisory hierarchy
-
-**Authify DB (`authify_sessions` table)**
-- token, emp_id, emp_name, emp_dept_id, emp_jobtitle_id
-- emp_prodline_id, emp_position_id, emp_station_id, shift_type, team, generated_at
-- Used by `AuthMiddleware` to validate SSO tokens
+| `id` | INT PK | Auto-increment |
+| `status` | VARCHAR | `online` or `maintenance` |
+| `message` | TEXT | Maintenance message shown to users |
+| `updated_at` | TIMESTAMP | Last toggle time |
 
 ---
 
-## 6. Backend Architecture
-
-### 6.1 Layered Architecture
+## 6. Authentication & Session Flow
 
 ```
-Controller → Service → Repository → Eloquent Model → Database
-                ↕
-           HrisApiService (External HTTP)
+Browser Request
+      │
+      ├─ Check for SSO token: query param (?key=) → cookie → session
+      │
+      ├─ No token found?
+      │       └──▶ Redirect to Authify (port 8001) with ?redirect= callback URL
+      │
+      └─ Token found → AuthMiddleware.php
+              │
+              ├─ Query authify.authify_sessions WHERE token = ?
+              │
+              ├─ Not found / expired?
+              │       └──▶ Clear session → Redirect to Authify login
+              │
+              ├─ Valid token
+              │       ├─ Set session('emp_data') with employee metadata
+              │       ├─ Set 7-day SSO cookie
+              │       ├─ Check system_status table
+              │       │       └─ If 'maintenance' and not a bypass route → Show 503 page
+              │       └─ Allow request to continue to controller
+              │
+              └─ Logout request
+                      └──▶ Clear session → Redirect to Authify SSO logout endpoint
 ```
 
-**Controllers** handle HTTP input/output and delegate all logic.  
-**Services** contain business logic, orchestrate calls across repositories and APIs.  
-**Repositories** encapsulate database queries (Eloquent).  
-**Models** define relationships and casts.
-
-### 6.2 Controllers
-
-#### `IrController` — Core IR Workflow
-The largest controller, managing the entire IR lifecycle:
-
-| Method | Route | Description |
-|---|---|---|
-| `index()` | GET /ir | My IR list |
-| `staff()` | GET /ir/staff | Supervisor's staff IRs |
-| `adminList()` | GET /ir/admin | HR global IR list |
-| `create()` | GET /ir/create | Create form page |
-| `store()` | POST /ir/store | Save new IR |
-| `show()` | GET /ir/{hash} | View IR detail |
-| `showDa()` | GET /ir/{hash}/da | View DA detail |
-| `edit()` | GET /ir/{hash}/edit | Edit draft IR |
-| `resubmit()` | POST /ir/{hash}/resubmit | Resubmit edited IR |
-| `validateIr()` | POST /ir/{hash}/validate | HR validates IR |
-| `submitLoe()` | POST /ir/{hash}/loe | Submit letter of explanation |
-| `supervisorAssess()` | POST /ir/{hash}/assess | Supervisor assessment |
-| `deptHeadReview()` | POST /ir/{hash}/dept-review | DH approval |
-| `hrRevalidate()` | POST /ir/{hash}/revalidate | HR re-validation |
-| `issueDa()` | POST /ir/{hash}/issue-da | Issue DA |
-| `hrManagerApprove()` | POST /ir/{hash}/da/hr-approve | HR Manager signs |
-| `svAcknowledge()` | POST /ir/{hash}/da/sv-ack | Supervisor acks |
-| `dmAcknowledge()` | POST /ir/{hash}/da/dm-ack | Div. Manager acks |
-| `employeeAcknowledge()` | POST /ir/{hash}/da/acknowledge | Employee acks |
-| `bulkAction()` | POST /ir/bulk-action | Batch operations |
-
-#### `DashboardController` — Admin Analytics
-- Computes IR status counts, monthly trends (12 months), top violation codes, DA type distribution, violation type split
-
-#### `IrMaintenanceController` — HR Admin Panel
-- CRUD for IR admin assignments (add/remove HR personnel, toggle active)
-- CRUD for violation codes (add/update/toggle)
-
-#### `AdminController` — System Admin Management
-- List, add, remove, change role of system administrators
-
-### 6.3 Services
-
-#### `HrisApiService`
-Central client for all HRIS API calls. Authenticates with `X-Internal-Key` header.
-
-| Method | Purpose |
-|---|---|
-| `fetchEmployeeName(id)` | Get employee display name |
-| `fetchWorkDetails(id)` | Full work info (dept, prodline, status) |
-| `fetchApprovers(id)` | Supervisor hierarchy chain |
-| `fetchOperationDirector()` | Get current OD |
-| `fetchActiveEmployees(query, page, per_page)` | Paginated search |
-| `fetchDirectReports(id)` | Supervisor's team list |
-| `isValidWorkData(data)` | Validate completeness of work data |
-
-#### `IrRequestService`
-- Resolves current user's role in context of a specific IR
-- Determines which actions are available to the current user
-- Builds paginated IR lists with filters
-- Maps DB rows to frontend-friendly shapes
-
-#### `DataTableService`
-- Handles server-side pagination, sorting, and filtering for admin DataTable components
-
-### 6.4 Routes
-
-Routes are split across four files, all under the `APP_NAME` URL prefix:
-
-| File | Prefix | Guard | Purpose |
-|---|---|---|---|
-| `auth.php` | `/` | — | Login/logout/unauthorized |
-| `general.php` | `/` | AuthMiddleware | Dashboard, profile, admin mgmt |
-| `irda.php` | `/` | AuthMiddleware | Full IR workflow |
-| `web.php` | — | — | Includes all above + 404 fallback |
-
-Admin routes (add/remove system admin) additionally require `AdminMiddleware`.  
-Maintenance routes require `AuthMiddleware` + `is_active` HR admin check inside controller.
-
----
-
-## 7. Frontend Architecture
-
-### 7.1 Inertia.js SPA Pattern
-
-IRDA uses **Inertia.js** to bridge Laravel routing with React rendering:
-- Server-side routing (no React Router)
-- Initial page load = full HTML with embedded JSON props
-- Subsequent navigations = JSON response, React re-renders the page component
-- Shared data (auth user, flash messages) injected via `HandleInertiaRequests`
-
-### 7.2 Page Components
-
-All Inertia pages live in `resources/js/Pages/`:
-
-| Page | Path | Audience |
-|---|---|---|
-| Login | `Authentication/Login.jsx` | All |
-| Dashboard | `Dashboard.jsx` | Admin |
-| My IRs | `IR/IndexIR.jsx` | Employee |
-| Staff IRs | `IR/StaffIR.jsx` | Supervisor |
-| Admin IRs | `IR/AdminIR.jsx` | HR Admin |
-| Create IR | `IR/CreateIR.jsx` | Supervisor |
-| Edit IR | `IR/EditIR.jsx` | Requestor |
-| View IR | `IR/ShowIR.jsx` | All roles |
-| View DA | `IR/ShowDA.jsx` | All roles |
-| Admin Maintenance | `IR/Maintenance/AdminMaintenance.jsx` | HR Admin |
-| Code Maintenance | `IR/Maintenance/CodeMaintenance.jsx` | HR Admin |
-| Admin List | `Admin/Admin.jsx` | System Admin |
-| Add Admin | `Admin/NewAdmin.jsx` | System Admin |
-| Profile | `Profile/Profile.jsx` | All |
-
-### 7.3 Reusable Components
-
-Located in `resources/js/Components/`:
-
-| Component | Purpose |
-|---|---|
-| `DataTable.jsx` | Server-paginated sortable/filterable table |
-| `Modal.jsx` | Generic modal dialog wrapper |
-| `Pagination.jsx` | Page navigation controls |
-| `NavBar.jsx` | Top navigation bar |
-| `TextInput.jsx` | Styled form input |
-| `LoadingScreen.jsx` | Full-screen loading overlay |
-| `sidebar/SideBar.jsx` | Left sidebar layout |
-| `sidebar/Navigation.jsx` | Sidebar nav links |
-| `ThemeContext.jsx` | Dark/light theme provider |
-| `ui/*` | Radix UI + Tailwind primitives |
-
-### 7.4 IR-Specific Sub-Components
-
-Located in `resources/js/Pages/IR/components/`:
-
-| Component | Purpose |
-|---|---|
-| `ApprovalSection.jsx` | Renders multi-role approval timeline |
-| `EmployeeSection.jsx` | Employee info card (subject + requestor) |
-| `IncidentDetailsSection.jsx` | Incident date, description display |
-| `ViolationSection.jsx` | List of violations with DA types |
-| `IrStatusBadge.jsx` | Colored status badge |
-| `PrintableDA.jsx` | Printable DA document layout |
-| `IrConstants.js` | Frontend mirror of backend constants |
-| `IrShared.jsx` | Shared UI utilities across IR pages |
-
-### 7.5 Custom Hooks
-
-Located in `resources/js/Pages/IR/hooks/`:
-
-| Hook | Purpose |
-|---|---|
-| `useIrFilters.js` | Filter state for My IR list |
-| `useAdminFilters.js` | Filter state for Admin IR list |
-| `useIrForm.js` | IR create/edit form state & submission |
-| `useEmployee.js` | Employee search autocomplete & work details |
-| `useCodeNumbers.js` | Fetch and cache violation code list |
-
-### 7.6 State Management
-
-- **Zustand** (`stores/createFilterStore.js`) — Per-table filter state (search, status filter, date range, pagination)
-- **React Hook Form** — Form state for IR create/edit
-- **Inertia shared data** — Auth user, flash messages (server-injected)
-- **Local component state** — Modal open/close, loading flags
-
----
-
-## 8. Authentication & Authorization
-
-### 8.1 Authentication Flow (SSO via Authify)
-
-```
-1. User visits IRDA → AuthMiddleware checks session
-2. No valid session → redirect to Authify (port 8001) with ?redirect=
-3. Authify authenticates → redirect back to IRDA with ?key=TOKEN
-4. AuthMiddleware validates TOKEN against authify_sessions DB
-5. Session stored: emp_data (emp_id, emp_name, dept, role, etc.)
-6. SSO cookie set (7-day expiry)
-7. On logout → session cleared + redirect to Authify /logout
-```
-
-### 8.2 Session Data Structure
+**Session Data (`session('emp_data')`):**
 
 ```php
-session('emp_data') = [
-    'token'           => string,
-    'emp_id'          => int,
-    'emp_name'        => string,
-    'emp_firstname'   => string,
-    'emp_dept_id'     => int,
-    'emp_jobtitle_id' => int,
-    'emp_prodline_id' => int,
-    'emp_position_id' => int,
-    'emp_station_id'  => int,
-    'shift_type'      => string,
-    'team'            => string,
+[
+    'token'           => 'abc123...',          // SSO token string
+    'emp_id'          => 12345,                // Employee ID
+    'emp_name'        => 'DELA CRUZ, JUAN',    // Full name
+    'emp_firstname'   => 'Juan',
+    'emp_dept_id'     => 3,
+    'emp_jobtitle_id' => 7,
+    'emp_prodline_id' => 2,
+    'emp_position_id' => 4,
+    'emp_station_id'  => 1,
+    'shift_type'      => 'Day',
+    'team'            => 'Team A',
+    'generated_at'    => '2025-01-01 08:00:00',
 ]
 ```
 
-### 8.3 Authorization Roles
+---
 
-| Role | Table | Assignment | Permissions |
-|---|---|---|---|
-| System Admin | `admins` | Manual DB entry | Access admin pages, manage admins |
-| HR | `ir_admins` (role='hr') | Via Admin Maintenance | Validate IR, revalidate, issue DA |
-| HR Manager | `ir_admins` (role='hr_mngr') | Via Admin Maintenance | Sign DA |
-| Supervisor | HRIS (emp_approver hierarchy) | Automatic via HRIS | Assess IR, ack DA |
-| Department Head | HRIS | Automatic via HRIS | Review IR |
-| Division Manager | HRIS | Automatic via HRIS | Ack DA |
-| Operations Director | HRIS | Automatic via HRIS | Optional IR approval |
-| Employee | HRIS (anyone) | Automatic | Submit LOE, ack DA |
+## 7. Backend Architecture
 
-### 8.4 Middleware
+### 7.1 Layered Design
 
-**`AuthMiddleware`**
-1. Checks for SSO cookie or session
-2. Validates token against `authify_sessions`
-3. If token invalid → clears session, redirects to Authify login
-4. If system in maintenance mode → blocks all access (except logout)
+```
+HTTP Request
+     │
+     ▼
+Middleware (AuthMiddleware → AdminMiddleware → HandleInertiaRequests)
+     │
+     ▼
+Controller  ─── validates HTTP input, delegates business logic ───▶ Service
+     │                                                                  │
+     ▼                                                                  ▼
+Inertia::render() / JSON response                                  Repository
+                                                                       │
+                                                                       ▼
+                                                               Eloquent Models
+                                                                       │
+                                                                       ▼
+                                                              MySQL Application DB
+```
 
-**`AdminMiddleware`**
-1. Checks `admins` table for current `emp_id`
-2. 403 if not found
+### 7.2 Role Resolution Logic
+
+When a user opens an IR, `IrRequestService::resolveCurrentUserRole()` computes their role dynamically by checking in order:
+
+```
+1. emp_id === ir.emp_no?            → "employee"
+2. emp_id in ir_admins (hr_mngr)?  → "hr_mngr"
+3. emp_id in ir_admins (hr)?       → "hr"
+4. emp_id === HRIS approver1_id?   → "sv"  (Supervisor)
+5. emp_id === HRIS approver2_id?   → "dh"  (Department Head)
+6. None of above                   → "view_only"
+```
+
+The resolved role is passed to `resolveAvailableActions()` which returns the list of workflow actions available for the current user, used by the frontend to show/hide buttons.
+
+### 7.3 IR Number Generation
+
+IR numbers follow the format `YY-NNNN`:
+- `YY` = last two digits of the current year
+- `NNNN` = sequential 4-digit counter, **resets each year**
+- Example: `25-0001`, `25-0002`, `26-0001`
+
+### 7.4 Constants Reference (`IrConstants.php`)
+
+```php
+// IR Workflow Statuses
+IR_PENDING    = 0
+IR_VALIDATED  = 1
+IR_APPROVED   = 2
+IR_INVALID    = 3
+IR_CANCELLED  = 4
+
+// DA Workflow Statuses
+DA_PENDING    = 0   // DA not yet issued
+DA_HR_SIGNED  = 1   // HR Manager signed
+DA_SV_ACKED   = 2   // Supervisor acknowledged
+DA_DM_ACKED   = 3   // Division Manager acknowledged
+DA_EMP_ACKED  = 4   // Employee acknowledged (complete)
+
+// DA Types
+DA_TYPE_VERBAL    = 1
+DA_TYPE_WRITTEN   = 2
+DA_TYPE_3DAY      = 3
+DA_TYPE_7DAY      = 4
+DA_TYPE_DISMISSAL = 5
+
+// Approval Record Statuses
+APPROVAL_PENDING     = 0
+APPROVAL_APPROVED    = 1
+APPROVAL_DISAPPROVED = 2
+
+// Violation Categories
+VIOLATION_ADMINISTRATIVE = 1
+VIOLATION_QUALITY        = 2
+
+// Companies that use IR-only flow (no DA)
+IR_ONLY_COMPANY_IDS = [5]
+```
 
 ---
 
-## 9. IR Workflow Engine
+## 8. Frontend Architecture
 
-### 9.1 IR Status Flow
+### 8.1 Inertia.js Page Rendering
 
-```
-[IR_PENDING (0)]
-      │
-      │ HR validates
-      ▼
-[IR_VALIDATED (1)]
-      │
-      │ Employee submits LOE
-      │ Supervisor assesses
-      │ HR revalidates
-      │ Department Head reviews
-      ▼
-[IR_APPROVED (2)] ──── HR issues DA ────► DA Workflow
-      │
-      │ (if invalid)
-      ▼
-[IR_INVALID (3)]
+The backend returns `Inertia::render('PageName', $props)`. The React SPA receives this as JSON and renders the matching page component without a full page reload, giving the feel of a traditional SPA while keeping server-side routing and data fetching.
 
-[IR_CANCELLED (4)]  ← can be set at any point by HR
-```
+**Shared Props (via `HandleInertiaRequests.php`):**
+- `auth.user` — logged-in employee session data
+- `flash` — success/error flash messages from redirects
 
-### 9.2 DA Status Flow
+### 8.2 Key Page Components
 
-```
-[DA_CREATED (0)]
-      │ HR Manager signs
-      ▼
-[DA_FOR_HR_MANAGER (1)]
-      │ Supervisor acknowledges
-      ▼
-[DA_FOR_SUPERVISOR (2)]
-      │ Division Manager acknowledges
-      ▼
-[DA_FOR_DEPT_MANAGER (3)]
-      │ Employee can acknowledge
-      ▼
-[DA_FOR_ACKNOWLEDGEMENT (4)]
-      │ Employee acknowledges
-      ▼
-[DA_ACKNOWLEDGED (5)]  ← COMPLETE
-```
-
-### 9.3 Display Status (Frontend)
-
-The `resolveDisplayStatus()` helper in `IrConstants.php` maps the combination of IR status, approval records, DA status, and LOE submission to 14 human-readable frontend statuses:
-
-- Pending, Disapproved, Letter of Explanation, Under Assessment, Under Review, Approved, Invalid, Cancelled
-- DA: Created, For HR Manager, For Supervisor Ack, For Dept Manager Ack, For Employee Ack, Acknowledged
-
-### 9.4 Role Resolution Logic
-
-`IrRequestService::resolveCurrentUserRole()` determines the acting user's role in a specific IR context:
-- Checks `ir_admins` table → HR or HR_MNGR
-- Checks HRIS approver chain → SV, DH, DM
-- Checks OD → OD role
-- Falls back to employee (requestor/subject)
-
-`resolveAvailableActions()` then returns the list of actions the resolved role can take at the current IR/DA state.
-
----
-
-## 10. External Integrations
-
-### 10.1 Authify SSO
-
-| Item | Detail |
-|---|---|
-| Host | 127.0.0.1:8001 |
-| Login Endpoint | GET /login?redirect={callback_url} |
-| Logout Endpoint | GET /logout?token={token}&redirect={url} |
-| Token Validation | Direct DB query on authify_sessions table |
-| Session Lifetime | 720 minutes (configurable in .env) |
-
-### 10.2 HRIS API
-
-| Item | Detail |
-|---|---|
-| Authentication | `X-Internal-Key` header |
-| Employee Name | GET /api/employees/{id} |
-| Work Details | GET /api/employees/{id}/work |
-| Approvers Chain | GET /api/employees/{id}/work (includes hierarchy) |
-| OD Lookup | GET /api/employees/operation-director |
-| Employee Search | GET /api/employees/active?q=base64(json) |
-| Direct Reports | GET /api/employees/direct-reports/{id} |
-
----
-
-## 11. Key Constants & Enums
-
-Defined in `app/Constants/IrConstants.php` and mirrored in `resources/js/Pages/IR/components/IrConstants.js`.
-
-### IR Status
-| Constant | Value | Meaning |
+| Page | Route | Purpose |
 |---|---|---|
-| `IR_PENDING` | 0 | Just created |
-| `IR_VALIDATED` | 1 | HR has actioned |
-| `IR_APPROVED` | 2 | Approved, DA phase |
-| `IR_INVALID` | 3 | Disposition invalid |
-| `IR_CANCELLED` | 4 | Cancelled |
+| `Dashboard.jsx` | `/` | Analytics charts and KPI cards |
+| `IndexIR.jsx` | `/ir` | Employee's own IR list |
+| `StaffIR.jsx` | `/ir/staff` | Supervisor's direct report IRs |
+| `AdminIR.jsx` | `/ir/admin` | HR global IR list + bulk actions |
+| `CreateIR.jsx` | `/ir/create` | New IR creation form |
+| `EditIR.jsx` | `/ir/{hash}/edit` | Edit a disapproved IR |
+| `ShowIR.jsx` | `/ir/{hash}` | IR detail + workflow action buttons |
+| `ShowDA.jsx` | `/ir/{hash}/da` | DA detail + signature acknowledgment |
+| `AdminMaintenance.jsx` | `/ir/maintenance/admins` | HR admin personnel CRUD |
+| `CodeMaintenance.jsx` | `/ir/maintenance/codes` | Violation code CRUD |
+| `Admin.jsx` | `/admin` | System administrators list |
+| `Profile.jsx` | `/profile` | User profile + password change |
 
-### Approval Status
-| Constant | Value | Meaning |
+### 8.3 AJAX Endpoints (JSON — not Inertia)
+
+These are called directly from React hooks using Axios:
+
+| Endpoint | Hook | Purpose |
 |---|---|---|
-| `APPROVAL_PENDING` | 0 | Awaiting action |
-| `APPROVAL_APPROVED` | 1 | Approved/signed |
-| `APPROVAL_DISAPPROVED` | 2 | Rejected |
-
-### DA Types
-| Value | Label |
-|---|---|
-| 1 | Verbal Warning |
-| 2 | Written Warning |
-| 3 | 3-Day Suspension |
-| 4 | 7-Day Suspension |
-| 5 | Dismissal |
-
-### Violation Types
-| Value | Label |
-|---|---|
-| 1 | Administrative |
-| 2 | Quality |
-
-### Approval Roles
-`SV`, `HR`, `DH`, `OD`, `HR_MNGR`, `DM`, `DA`
+| `GET /ir/employees/search?q=&page=` | `useEmployee.js` | Employee autocomplete in create/edit form |
+| `GET /ir/employees/{id}/work` | `useEmployee.js` | Load work details on employee select |
+| `GET /ir/code-numbers?page=` | `useCodeNumbers.js` | Paginated violation code picker |
 
 ---
 
-## 12. Configuration & Environment
+## 9. External Integrations
 
-### `.env` Key Variables
+### 9.1 HRIS REST API (`HrisApiService.php`)
+
+All requests use the `X-Internal-Key` header for authentication. The base URL is configured via `HRIS_API_URL` in `.env`.
+
+| Method | Data Returned |
+|---|---|
+| `fetchEmployeeName(emp_no)` | Employee full name |
+| `fetchWorkDetails(emp_no)` | Department, prodline, station, shift, team, company_id |
+| `fetchApprovers(emp_no)` | `approver1_id` (Supervisor), `approver2_id` (Dept Head) |
+| `fetchEmployeesBulk([ids])` | Batch name lookups — prevents N+1 on list pages |
+| `fetchDirectReports(emp_no)` | List of direct report employees for a supervisor |
+| `fetchActiveEmployees(q, page)` | Paginated search for the create IR form |
+
+### 9.2 Authify SSO
+
+| Scenario | Behavior |
+|---|---|
+| No token | Redirect to `{SSO_URL}?redirect={callback_url}` |
+| Valid token | Set session + 7-day cookie, allow request |
+| Invalid/expired token | Clear session, redirect to SSO login |
+| Logout | Destroy session + redirect to Authify logout endpoint |
+
+---
+
+## 10. Route Map
+
+### Auth Routes (`routes/auth.php`)
+```
+GET  /{app_name}/logout        → AuthenticationController@logout
+GET  /{app_name}/unauthorized  → Unauthorized page
+```
+
+### General Routes (`routes/general.php`)
+```
+GET   /{app_name}/                  → DashboardController@index
+GET   /{app_name}/profile           → ProfileController@index
+POST  /{app_name}/change-password   → ProfileController@changePassword
+GET   /{app_name}/admin             → AdminController@index      [AdminMiddleware]
+GET   /{app_name}/new-admin         → AdminController@create     [AdminMiddleware]
+POST  /{app_name}/add-admin         → AdminController@store      [AdminMiddleware]
+POST  /{app_name}/remove-admin      → AdminController@destroy    [AdminMiddleware]
+PATCH /{app_name}/change-admin-role → AdminController@update     [AdminMiddleware]
+```
+
+### IR Workflow Routes (`routes/irda.php`)
+```
+GET   /{app_name}/ir                         → IrController@index         (My IR list)
+GET   /{app_name}/ir/staff                   → IrController@staff         (Staff IR list)
+GET   /{app_name}/ir/admin                   → IrController@adminList     (Admin IR list)
+GET   /{app_name}/ir/create                  → IrController@create
+POST  /{app_name}/ir/store                   → IrController@store
+GET   /{app_name}/ir/employees/search        → IrController@searchEmployees        [JSON]
+GET   /{app_name}/ir/employees/{id}/work     → IrController@employeeWorkDetails    [JSON]
+GET   /{app_name}/ir/code-numbers            → IrController@codeNumbers            [JSON]
+GET   /{app_name}/ir/{hash}                  → IrController@show
+GET   /{app_name}/ir/{hash}/da               → IrController@showDa
+POST  /{app_name}/ir/bulk-action             → IrController@bulkAction
+GET   /{app_name}/ir/{hash}/edit             → IrController@edit
+POST  /{app_name}/ir/{hash}/resubmit         → IrController@resubmit
+POST  /{app_name}/ir/{hash}/validate         → IrController@validateIr
+POST  /{app_name}/ir/{hash}/loe              → IrController@submitLoe
+POST  /{app_name}/ir/{hash}/assess           → IrController@supervisorAssess
+POST  /{app_name}/ir/{hash}/dept-review      → IrController@deptHeadReview
+POST  /{app_name}/ir/{hash}/revalidate       → IrController@hrRevalidate
+POST  /{app_name}/ir/{hash}/issue-da         → IrController@issueDa
+POST  /{app_name}/ir/{hash}/da/hr-approve    → IrController@hrManagerApprove
+POST  /{app_name}/ir/{hash}/da/sv-ack        → IrController@svAcknowledge
+POST  /{app_name}/ir/{hash}/da/dm-ack        → IrController@dmAcknowledge
+POST  /{app_name}/ir/{hash}/da/acknowledge   → IrController@employeeAcknowledge
+```
+
+### Maintenance Routes (`routes/irda.php` — HR role required)
+```
+GET    /{app_name}/ir/maintenance/admins             → IrMaintenanceController@admins
+POST   /{app_name}/ir/maintenance/admins             → IrMaintenanceController@adminStore
+PUT    /{app_name}/ir/maintenance/admins/{id}        → IrMaintenanceController@adminUpdate
+POST   /{app_name}/ir/maintenance/admins/{id}/toggle → IrMaintenanceController@adminToggle
+DELETE /{app_name}/ir/maintenance/admins/{id}        → IrMaintenanceController@adminDelete
+GET    /{app_name}/ir/maintenance/codes              → IrMaintenanceController@codes
+POST   /{app_name}/ir/maintenance/codes              → IrMaintenanceController@codeStore
+PUT    /{app_name}/ir/maintenance/codes/{id}         → IrMaintenanceController@codeUpdate
+POST   /{app_name}/ir/maintenance/codes/{id}/toggle  → IrMaintenanceController@codeToggle
+```
+
+---
+
+## 11. Environment Configuration
+
+Key `.env` variables:
 
 ```env
-APP_NAME=irda                    # Used as URL prefix
+# Application
+APP_NAME=irda                     # Used as URL prefix for all routes
+APP_URL=http://your-domain.com
 APP_TIMEZONE=Asia/Manila
 
-# Application DB
-DB_CONNECTION=mysql
-DB_HOST=...
-DB_DATABASE=...
+# Application Database (Read/Write)
+DB_HOST=
+DB_DATABASE=
+DB_USERNAME=
+DB_PASSWORD=
 
-# HR Masterlist DB (read-only)
-MDB_HOST=...
-MDB_DATABASE=...
+# HRIS Masterlist Database (Read-Only)
+MDB_HOST=
+MDB_DATABASE=tspi_hr_db
+MDB_USERNAME=
+MDB_PASSWORD=
 
-# Authify SSO DB (read-only)
-ADB_HOST=...
-ADB_DATABASE=...
+# Authify SSO Database (Read-Only)
+ADB_HOST=
+ADB_DATABASE=
+ADB_USERNAME=
+ADB_PASSWORD=
 
-# HRIS API
-HRIS_API_URL=...
-HRIS_INTERNAL_KEY=...
+# SSO
+SSO_COOKIE_NAME=authify_token
+SSO_URL=http://authify-server:8001
 
-# Authify SSO
-AUTHIFY_URL=http://127.0.0.1:8001
-AUTHIFY_REDIRECT=...
+# HRIS REST API
+HRIS_API_URL=http://hris-api-server/api
+HRIS_API_KEY=your-internal-api-key
 
-SESSION_LIFETIME=720
-QUEUE_CONNECTION=database
+# Session
+SESSION_DRIVER=file
+SESSION_LIFETIME=720              # 12 hours
 ```
-
-### Tailwind & Theming
-- Dark mode via CSS class (`.dark`)
-- Custom font: Poppins
-- Custom animation: `fade` keyframes
-- DaisyUI themes: `light` / `dark`
-- Theme stored in `ThemeContext` (React context + localStorage)
-
----
-
-*End of Architecture Documentation*

@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Models\IrAdmin;
+use App\Services\HrisApiService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -36,6 +38,11 @@ class HandleInertiaRequests extends Middleware
             'ir_admin_role' => fn() => ($empNo = (int) session('emp_data.emp_id'))
                 ? IrAdmin::roleFor($empNo)
                 : null,
+            'has_staff'     => fn() => ($empNo = (int) session('emp_data.emp_id'))
+                ? Cache::remember("has_staff_{$empNo}", 600, fn() =>
+                    !empty(app(HrisApiService::class)->fetchDirectReports($empNo))
+                )
+                : false,
             'flash' => [
                 'success' => fn() => $request->session()->get('success'),
                 'error'   => fn() => $request->session()->get('error'),
