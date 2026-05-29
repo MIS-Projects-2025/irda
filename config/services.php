@@ -39,4 +39,8 @@ return [
         'url' => env('HRIS_API_URL'),
         'key' => env('HRIS_API_KEY'),
     ],
+
+    'authify' => [
+        'base_url' => env('AUTHIFY_BASE_URL'),
+    ],
 ];
